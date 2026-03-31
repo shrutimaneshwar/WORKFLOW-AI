@@ -5,7 +5,7 @@ import {
   Loader2, AlertTriangle, Zap, DollarSign, Brain,
   BarChart3, Wrench, Clock, Share2, Globe, GlobeLock,
   Trash2, ChevronDown, ChevronUp, Activity, LogOut, Copy, Check,
-  Download, ChevronRight
+  Download, Mail, Send, X
 } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL + "/api";
@@ -88,6 +88,10 @@ export default function DashboardPage() {
   const [selectedModel, setSelectedModel] = useState("claude");
   const [models, setModels] = useState([]);
   const [exporting, setExporting] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailStatus, setEmailStatus] = useState(null);
   const resultsRef = useRef(null);
 
   useEffect(() => {
@@ -148,6 +152,24 @@ export default function DashboardPage() {
       console.error("PDF export error:", err);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const sendEmailReport = async () => {
+    if (!emailTo.trim() || !analysis?.id) return;
+    setSendingEmail(true);
+    setEmailStatus(null);
+    try {
+      await axios.post(`${API}/send-report`, {
+        analysis_id: analysis.id,
+        recipient_email: emailTo.trim()
+      }, { withCredentials: true });
+      setEmailStatus("success");
+      setTimeout(() => { setShowEmailModal(false); setEmailStatus(null); setEmailTo(""); }, 2000);
+    } catch (err) {
+      setEmailStatus(err.response?.data?.detail || "Failed to send email");
+    } finally {
+      setSendingEmail(false);
     }
   };
 
@@ -271,6 +293,7 @@ export default function DashboardPage() {
             </button>
 
             {analysis && (
+              <>
               <button
                 data-testid="export-pdf-button"
                 onClick={exportPDF}
@@ -280,6 +303,15 @@ export default function DashboardPage() {
                 {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                 {exporting ? "Exporting..." : "Export PDF"}
               </button>
+              <button
+                data-testid="email-report-button"
+                onClick={() => setShowEmailModal(true)}
+                className="px-4 py-2.5 bg-[#020617] hover:bg-[#334155] border border-[#334155] text-[#94A3B8] hover:text-[#F8FAFC] font-medium rounded-md transition-colors duration-200 flex items-center gap-2 text-sm"
+              >
+                <Mail className="w-4 h-4" />
+                Email Report
+              </button>
+              </>
             )}
           </div>
         </div>
@@ -369,6 +401,57 @@ export default function DashboardPage() {
       <footer className="border-t border-[#334155] mt-16 py-5 text-center text-[#64748B] text-xs">
         WorkflowAI &mdash; Powered by AI + System Design Thinking
       </footer>
+
+      {/* Email Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center px-4" data-testid="email-modal">
+          <div className="bg-[#1E293B] rounded-lg p-6 border border-[#334155] w-full max-w-sm animate-fadeIn">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-[#F8FAFC] tracking-tight flex items-center gap-2">
+                <Mail className="w-4 h-4 text-blue-400" /> Send Report via Email
+              </h3>
+              <button onClick={() => { setShowEmailModal(false); setEmailStatus(null); }} className="p-1 rounded-md hover:bg-[#334155] transition-colors">
+                <X className="w-4 h-4 text-[#64748B]" />
+              </button>
+            </div>
+
+            {emailStatus === "success" ? (
+              <div className="text-center py-4">
+                <Check className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                <p className="text-emerald-400 text-sm">Report sent successfully!</p>
+              </div>
+            ) : (
+              <>
+                {typeof emailStatus === "string" && emailStatus !== "success" && (
+                  <div className="mb-3 p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-md text-rose-400 text-xs">
+                    {emailStatus}
+                  </div>
+                )}
+                <div className="relative mb-4">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+                  <input
+                    data-testid="email-recipient-input"
+                    type="email"
+                    value={emailTo}
+                    onChange={e => setEmailTo(e.target.value)}
+                    className="w-full bg-[#020617] border border-[#334155] rounded-md pl-10 pr-4 py-2.5 text-[#F8FAFC] placeholder-[#64748B] focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm"
+                    placeholder="recipient@example.com"
+                  />
+                </div>
+                <button
+                  data-testid="send-email-button"
+                  onClick={sendEmailReport}
+                  disabled={sendingEmail || !emailTo.trim()}
+                  className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors duration-200 flex items-center justify-center gap-2 text-sm"
+                >
+                  {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {sendingEmail ? "Sending..." : "Send Report"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

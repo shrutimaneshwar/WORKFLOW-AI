@@ -15,6 +15,8 @@ import jwt
 import secrets
 import json
 import uuid
+import asyncio
+import resend
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
@@ -411,6 +413,95 @@ async def get_shared_analysis(share_token: str):
     doc["id"] = str(doc.pop("_id"))
     doc.pop("user_id", None)
     return doc
+
+# ─── Email Report ───
+
+class EmailReportRequest(BaseModel):
+    analysis_id: str
+    recipient_email: str
+
+@api_router.post("/send-report")
+async def send_email_report(request: EmailReportRequest, user: dict = Depends(get_current_user)):
+    resend_key = os.environ.get("RESEND_API_KEY")
+    if not resend_key:
+        raise HTTPException(status_code=503, detail="Email service not configured. Add RESEND_API_KEY to enable.")
+
+    resend.api_key = resend_key
+
+    try:
+        doc = await db.workflow_history.find_one({"_id": ObjectId(request.analysis_id), "user_id": user["_id"]})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    # Build HTML email
+    def render_list(items, color):
+        return "".join(f'<li style="padding:4px 0;color:#94A3B8;font-size:14px;"><span style="color:{color};margin-right:6px;">&#8226;</span>{item}</li>' for item in items)
+
+    def render_steps(items):
+        return "".join(f'<div style="display:flex;gap:8px;padding:4px 0;"><span style="background:#065f46;color:#34d399;width:22px;height:22px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;">{i+1}</span><span style="color:#94A3B8;font-size:14px;">{step}</span></div>' for i, step in enumerate(items))
+
+    html = f"""
+    <div style="background:#0F172A;padding:32px;font-family:Arial,sans-serif;color:#F8FAFC;">
+      <div style="max-width:600px;margin:0 auto;">
+        <h1 style="font-size:20px;color:#3B82F6;margin-bottom:4px;">WorkflowAI Report</h1>
+        <p style="color:#64748B;font-size:12px;margin-bottom:24px;">Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</p>
+
+        <div style="background:#1E293B;border:1px solid #334155;border-radius:8px;padding:16px;margin-bottom:16px;">
+          <h3 style="color:#64748B;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Workflow</h3>
+          <p style="color:#F8FAFC;font-size:14px;font-family:monospace;">{doc.get('workflow_description','')}</p>
+        </div>
+
+        <div style="background:#1E293B;border:1px solid #334155;border-left:3px solid #F43F5E;border-radius:8px;padding:16px;margin-bottom:12px;">
+          <h3 style="color:#F43F5E;font-size:14px;margin-bottom:8px;">Issues & Risks</h3>
+          <ul style="list-style:none;padding:0;margin:0;">{render_list(doc.get('issues_risks',[]), '#F43F5E')}</ul>
+        </div>
+
+        <div style="background:#1E293B;border:1px solid #334155;border-left:3px solid #3B82F6;border-radius:8px;padding:16px;margin-bottom:12px;">
+          <h3 style="color:#3B82F6;font-size:14px;margin-bottom:8px;">Optimizations</h3>
+          <ul style="list-style:none;padding:0;margin:0;">{render_list(doc.get('optimization_suggestions',[]), '#3B82F6')}</ul>
+        </div>
+
+        <div style="background:#1E293B;border:1px solid #334155;border-left:3px solid #F59E0B;border-radius:8px;padding:16px;margin-bottom:12px;">
+          <h3 style="color:#F59E0B;font-size:14px;margin-bottom:8px;">Cost & Efficiency</h3>
+          <ul style="list-style:none;padding:0;margin:0;">{render_list(doc.get('cost_efficiency_insights',[]), '#F59E0B')}</ul>
+        </div>
+
+        <div style="background:#1E293B;border:1px solid #334155;border-left:3px solid #10B981;border-radius:8px;padding:16px;margin-bottom:12px;">
+          <h3 style="color:#10B981;font-size:14px;margin-bottom:8px;">Improved Workflow</h3>
+          {render_steps(doc.get('improved_workflow',[]))}
+        </div>
+
+        <div style="background:#1E293B;border:1px solid #334155;border-left:3px solid #8B5CF6;border-radius:8px;padding:16px;margin-bottom:12px;">
+          <h3 style="color:#8B5CF6;font-size:14px;margin-bottom:8px;">Complexity</h3>
+          <p style="color:#C4B5FD;font-size:14px;">{doc.get('complexity_analysis','')}</p>
+        </div>
+
+        <div style="background:#1E293B;border:1px solid #334155;border-left:3px solid #06B6D4;border-radius:8px;padding:16px;margin-bottom:12px;">
+          <h3 style="color:#06B6D4;font-size:14px;margin-bottom:8px;">Advanced Suggestions</h3>
+          <ul style="list-style:none;padding:0;margin:0;">{render_list(doc.get('advanced_suggestions',[]), '#06B6D4')}</ul>
+        </div>
+
+        <p style="color:#64748B;font-size:11px;text-align:center;margin-top:24px;">Powered by WorkflowAI</p>
+      </div>
+    </div>
+    """
+
+    sender = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
+    params = {
+        "from": sender,
+        "to": [request.recipient_email],
+        "subject": f"WorkflowAI Analysis Report - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}",
+        "html": html
+    }
+
+    try:
+        email_result = await asyncio.to_thread(resend.Emails.send, params)
+        return {"status": "success", "message": f"Report sent to {request.recipient_email}", "email_id": email_result.get("id")}
+    except Exception as e:
+        logger.error(f"Email send error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
 
 # ─── App Setup ───
 
