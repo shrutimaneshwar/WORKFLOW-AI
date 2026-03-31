@@ -11,7 +11,7 @@ Verify: bcrypt hash starts with `$2b$`, indexes exist on users.email (unique), l
 
 ## Step 2: API Testing
 ```
-API_URL=https://workflow-insights-ai.preview.emergentagent.com
+API_URL=https://workflow-ai-debug.preview.emergentagent.com
 
 # Login
 curl -c cookies.txt -X POST $API_URL/api/auth/login -H "Content-Type: application/json" -d '{"email":"admin@workflowai.com","password":"admin123"}'
