@@ -1,106 +1,258 @@
-from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Any
-import uuid
-import json
-from datetime import datetime, timezone
-from emergentintegrations.llm.chat import LlmChat, UserMessage
-
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+from bson import ObjectId
+import os
+import logging
+import bcrypt
+import jwt
+import secrets
+import json
+import uuid
+from datetime import datetime, timezone, timedelta
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# MongoDB connection
+# MongoDB
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+# ─── Auth Helpers ───
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+JWT_ALGORITHM = "HS256"
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+def get_jwt_secret():
+    return os.environ["JWT_SECRET"]
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
+def verify_password(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+def create_access_token(user_id: str, email: str) -> str:
+    payload = {"sub": user_id, "email": email, "exp": datetime.now(timezone.utc) + timedelta(minutes=15), "type": "access"}
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
+def create_refresh_token(user_id: str) -> str:
+    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=7), "type": "refresh"}
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
-# Workflow Analysis Models
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=900, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+
+async def get_current_user(request: Request) -> dict:
+    token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        user["_id"] = str(user["_id"])
+        user.pop("password_hash", None)
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# ─── Brute Force Protection ───
+
+async def check_brute_force(ip: str, email: str):
+    identifier = f"{ip}:{email}"
+    record = await db.login_attempts.find_one({"identifier": identifier})
+    if record and record.get("attempts", 0) >= 5:
+        locked_until = record.get("locked_until")
+        if locked_until and datetime.now(timezone.utc) < locked_until:
+            raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
+        else:
+            await db.login_attempts.delete_one({"identifier": identifier})
+
+async def record_failed_attempt(ip: str, email: str):
+    identifier = f"{ip}:{email}"
+    record = await db.login_attempts.find_one({"identifier": identifier})
+    if record:
+        attempts = record.get("attempts", 0) + 1
+        update = {"$set": {"attempts": attempts, "last_attempt": datetime.now(timezone.utc)}}
+        if attempts >= 5:
+            update["$set"]["locked_until"] = datetime.now(timezone.utc) + timedelta(minutes=15)
+        await db.login_attempts.update_one({"identifier": identifier}, update)
+    else:
+        await db.login_attempts.insert_one({"identifier": identifier, "attempts": 1, "last_attempt": datetime.now(timezone.utc)})
+
+async def clear_failed_attempts(ip: str, email: str):
+    await db.login_attempts.delete_one({"identifier": f"{ip}:{email}"})
+
+# ─── Models ───
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
 class WorkflowAnalysisRequest(BaseModel):
     workflow_description: str
 
 class WorkflowAnalysisResponse(BaseModel):
+    id: Optional[str] = None
     issues_risks: List[str]
     optimization_suggestions: List[str]
     cost_efficiency_insights: List[str]
     improved_workflow: List[str]
     complexity_analysis: str
     advanced_suggestions: List[str]
+    workflow_description: Optional[str] = None
+    created_at: Optional[str] = None
+    share_token: Optional[str] = None
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
 
-@api_router.post("/analyze-workflow", response_model=WorkflowAnalysisResponse)
-async def analyze_workflow(request: WorkflowAnalysisRequest):
-    """
-    Analyze a workflow using AI and provide comprehensive insights
-    """
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+# ─── Auth Routes ───
+
+@api_router.post("/auth/register")
+async def register(request: RegisterRequest, response: Response):
+    email = request.email.lower().strip()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    user_doc = {
+        "email": email,
+        "name": request.name.strip(),
+        "password_hash": hash_password(request.password),
+        "role": "user",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.users.insert_one(user_doc)
+    user_id = str(result.inserted_id)
+    access_token = create_access_token(user_id, email)
+    refresh_token = create_refresh_token(user_id)
+    set_auth_cookies(response, access_token, refresh_token)
+    return {"_id": user_id, "email": email, "name": request.name.strip(), "role": "user"}
+
+@api_router.post("/auth/login")
+async def login(request: LoginRequest, response: Response, req: Request):
+    email = request.email.lower().strip()
+    ip = req.client.host if req.client else "unknown"
+    await check_brute_force(ip, email)
+    user = await db.users.find_one({"email": email})
+    if not user or not verify_password(request.password, user["password_hash"]):
+        await record_failed_attempt(ip, email)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    await clear_failed_attempts(ip, email)
+    user_id = str(user["_id"])
+    access_token = create_access_token(user_id, email)
+    refresh_token = create_refresh_token(user_id)
+    set_auth_cookies(response, access_token, refresh_token)
+    return {"_id": user_id, "email": email, "name": user.get("name", ""), "role": user.get("role", "user")}
+
+@api_router.post("/auth/logout")
+async def logout(response: Response):
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+    return {"message": "Logged out"}
+
+@api_router.get("/auth/me")
+async def get_me(user: dict = Depends(get_current_user)):
+    return user
+
+@api_router.post("/auth/refresh")
+async def refresh_token(request: Request, response: Response):
+    token = request.cookies.get("refresh_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="No refresh token")
     try:
-        # Get API key from environment
+        payload = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        access_token = create_access_token(str(user["_id"]), user["email"])
+        set_auth_cookies(response, access_token, token)
+        return {"message": "Token refreshed"}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    email = request.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user:
+        return {"message": "If that email exists, a reset link has been sent."}
+    token = secrets.token_urlsafe(32)
+    await db.password_reset_tokens.insert_one({
+        "token": token,
+        "user_id": str(user["_id"]),
+        "email": email,
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+        "used": False
+    })
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    logger.info(f"Password reset link: {frontend_url}/reset-password?token={token}")
+    return {"message": "If that email exists, a reset link has been sent."}
+
+@api_router.post("/auth/reset-password")
+async def reset_password(request: ResetPasswordRequest):
+    record = await db.password_reset_tokens.find_one({"token": request.token, "used": False})
+    if not record:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    if datetime.now(timezone.utc) > record["expires_at"]:
+        raise HTTPException(status_code=400, detail="Reset token has expired")
+    await db.users.update_one(
+        {"_id": ObjectId(record["user_id"])},
+        {"$set": {"password_hash": hash_password(request.new_password)}}
+    )
+    await db.password_reset_tokens.update_one({"token": request.token}, {"$set": {"used": True}})
+    return {"message": "Password reset successfully"}
+
+# ─── Health Check ───
+
+@api_router.get("/")
+async def root():
+    return {"message": "WorkflowAI API is running"}
+
+# ─── Workflow Analysis ───
+
+@api_router.post("/analyze-workflow")
+async def analyze_workflow(request: WorkflowAnalysisRequest, user: dict = Depends(get_current_user)):
+    try:
         api_key = os.environ.get('EMERGENT_LLM_KEY')
         if not api_key:
             raise HTTPException(status_code=500, detail="API key not configured")
-        
-        # Initialize LLM Chat with Claude Sonnet 4.5 for structured analysis
+
         chat = LlmChat(
             api_key=api_key,
             session_id=f"workflow-analysis-{uuid.uuid4()}",
@@ -113,36 +265,32 @@ You MUST respond in the following JSON format:
   "optimization_suggestions": ["suggestion 1", "suggestion 2", ...],
   "cost_efficiency_insights": ["insight 1", "insight 2", ...],
   "improved_workflow": ["step 1", "step 2", ...],
-  "complexity_analysis": "Brief complexity assessment (e.g., 'High - Multiple integration points with no error handling')",
+  "complexity_analysis": "Brief complexity assessment",
   "advanced_suggestions": ["advanced tip 1", "advanced tip 2", ...]
 }
 
 Be technical, specific, and practical. Avoid generic advice."""
         ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-        
-        # Create the analysis prompt
+
         user_message = UserMessage(
             text=f"""Analyze this workflow and provide comprehensive insights:
 
 WORKFLOW:
 {request.workflow_description}
 
-Provide your analysis in the exact JSON format specified in the system message. Focus on:
+Provide your analysis in the exact JSON format specified. Focus on:
 1. Issues/Risks: Identify logical errors, missing steps, failure points, edge cases
 2. Optimization Suggestions: How to reduce steps, improve speed, increase efficiency
-3. Cost & Efficiency Insights: Unnecessary API calls, delays, better alternatives, resource optimization
-4. Improved Workflow: Rewrite the workflow in cleaner, optimized step-by-step format (as array of strings)
+3. Cost & Efficiency Insights: Unnecessary API calls, delays, better alternatives
+4. Improved Workflow: Rewrite in cleaner, optimized step-by-step format
 5. Complexity Analysis: Brief assessment of workflow complexity
-6. Advanced Suggestions: Advanced engineering practices, monitoring, scaling, resilience patterns
+6. Advanced Suggestions: Advanced engineering practices, monitoring, scaling
 
 Return ONLY valid JSON, no additional text."""
         )
-        
-        # Get AI response
+
         response_text = await chat.send_message(user_message)
-        
-        # Parse the JSON response
-        # Extract JSON from response (handle potential markdown code blocks)
+
         response_clean = response_text.strip()
         if response_clean.startswith("```json"):
             response_clean = response_clean[7:]
@@ -151,30 +299,142 @@ Return ONLY valid JSON, no additional text."""
         if response_clean.endswith("```"):
             response_clean = response_clean[:-3]
         response_clean = response_clean.strip()
-        
+
         analysis_data = json.loads(response_clean)
-        
-        # Return structured response
-        return WorkflowAnalysisResponse(**analysis_data)
-        
+
+        # Save to history
+        share_token = secrets.token_urlsafe(16)
+        history_doc = {
+            "user_id": user["_id"],
+            "workflow_description": request.workflow_description,
+            "issues_risks": analysis_data.get("issues_risks", []),
+            "optimization_suggestions": analysis_data.get("optimization_suggestions", []),
+            "cost_efficiency_insights": analysis_data.get("cost_efficiency_insights", []),
+            "improved_workflow": analysis_data.get("improved_workflow", []),
+            "complexity_analysis": analysis_data.get("complexity_analysis", ""),
+            "advanced_suggestions": analysis_data.get("advanced_suggestions", []),
+            "share_token": share_token,
+            "is_public": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        result = await db.workflow_history.insert_one(history_doc)
+
+        return {
+            "id": str(result.inserted_id),
+            "issues_risks": analysis_data.get("issues_risks", []),
+            "optimization_suggestions": analysis_data.get("optimization_suggestions", []),
+            "cost_efficiency_insights": analysis_data.get("cost_efficiency_insights", []),
+            "improved_workflow": analysis_data.get("improved_workflow", []),
+            "complexity_analysis": analysis_data.get("complexity_analysis", ""),
+            "advanced_suggestions": analysis_data.get("advanced_suggestions", []),
+            "workflow_description": request.workflow_description,
+            "created_at": history_doc["created_at"],
+            "share_token": share_token
+        }
+
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse AI response: {e}")
-        logger.error(f"Response was: {response_text}")
         raise HTTPException(status_code=500, detail="Failed to parse AI response")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Workflow analysis error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
-# Include the router in the main app
+# ─── Workflow History ───
+
+@api_router.get("/workflow-history")
+async def get_workflow_history(user: dict = Depends(get_current_user)):
+    histories = await db.workflow_history.find(
+        {"user_id": user["_id"]},
+        {"_id": 1, "workflow_description": 1, "complexity_analysis": 1, "created_at": 1, "share_token": 1, "is_public": 1}
+    ).sort("created_at", -1).to_list(100)
+    for h in histories:
+        h["id"] = str(h.pop("_id"))
+    return histories
+
+@api_router.get("/workflow-history/{analysis_id}")
+async def get_workflow_detail(analysis_id: str, user: dict = Depends(get_current_user)):
+    try:
+        doc = await db.workflow_history.find_one({"_id": ObjectId(analysis_id), "user_id": user["_id"]})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    doc["id"] = str(doc.pop("_id"))
+    return doc
+
+@api_router.post("/workflow-history/{analysis_id}/toggle-public")
+async def toggle_public(analysis_id: str, user: dict = Depends(get_current_user)):
+    try:
+        doc = await db.workflow_history.find_one({"_id": ObjectId(analysis_id), "user_id": user["_id"]})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    new_state = not doc.get("is_public", False)
+    await db.workflow_history.update_one({"_id": ObjectId(analysis_id)}, {"$set": {"is_public": new_state}})
+    return {"is_public": new_state, "share_token": doc.get("share_token")}
+
+@api_router.delete("/workflow-history/{analysis_id}")
+async def delete_workflow(analysis_id: str, user: dict = Depends(get_current_user)):
+    try:
+        result = await db.workflow_history.delete_one({"_id": ObjectId(analysis_id), "user_id": user["_id"]})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return {"message": "Deleted"}
+
+# ─── Public Share ───
+
+@api_router.get("/shared/{share_token}")
+async def get_shared_analysis(share_token: str):
+    doc = await db.workflow_history.find_one({"share_token": share_token, "is_public": True})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Shared analysis not found or is private")
+    doc["id"] = str(doc.pop("_id"))
+    doc.pop("user_id", None)
+    return doc
+
+# ─── App Setup ───
+
 app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup():
+    await db.users.create_index("email", unique=True)
+    await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await db.login_attempts.create_index("identifier")
+    await db.workflow_history.create_index("user_id")
+    await db.workflow_history.create_index("share_token")
+    await seed_admin()
+    logger.info("WorkflowAI backend started")
+
+async def seed_admin():
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin@workflowai.com")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    existing = await db.users.find_one({"email": admin_email})
+    if existing is None:
+        await db.users.insert_one({
+            "email": admin_email,
+            "password_hash": hash_password(admin_password),
+            "name": "Admin",
+            "role": "admin",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        logger.info(f"Admin user seeded: {admin_email}")
+    elif not verify_password(admin_password, existing["password_hash"]):
+        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
+        logger.info("Admin password updated")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
