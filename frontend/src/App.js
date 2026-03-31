@@ -7,6 +7,7 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DashboardPage from "./pages/DashboardPage";
 import SharedPage from "./pages/SharedPage";
+import ComparePage from "./pages/ComparePage";
 import "./App.css";
 
 function ProtectedRoute({ children }) {
@@ -43,6 +44,7 @@ function AppRoutes() {
       <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
       <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
       <Route path="/shared/:shareToken" element={<SharedPage />} />
+      <Route path="/compare" element={<ProtectedRoute><ComparePage /></ProtectedRoute>} />
       <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

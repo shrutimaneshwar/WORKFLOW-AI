@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { Link } from "react-router-dom";
 import axios from "axios";
 import {
   Loader2, AlertTriangle, Zap, DollarSign, Brain,
   BarChart3, Wrench, Clock, Share2, Globe, GlobeLock,
   Trash2, ChevronDown, ChevronUp, Activity, LogOut, Copy, Check,
-  Download, Mail, Send, X
+  Download, Mail, Send, X, GitCompare
 } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL + "/api";
@@ -216,6 +217,14 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link
+              to="/compare"
+              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 px-3 py-1.5 rounded-md transition-colors"
+              data-testid="compare-models-link"
+            >
+              <GitCompare className="w-3 h-3" />
+              <span className="hidden sm:inline">Compare Models</span>
+            </Link>
             <span className="text-xs text-[#94A3B8] hidden sm:block" data-testid="user-display-name">
               {user?.name || user?.email}
             </span>

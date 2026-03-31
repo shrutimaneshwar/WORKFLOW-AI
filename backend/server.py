@@ -358,6 +358,93 @@ Return ONLY valid JSON, no additional text."""
         logger.error(f"Workflow analysis error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
+# ─── Compare Models ───
+
+ANALYSIS_SYSTEM_MESSAGE = """You are a senior AI systems engineer and automation expert specializing in workflow analysis.
+Your task is to analyze workflows and provide deep, actionable insights.
+
+You MUST respond in the following JSON format:
+{
+  "issues_risks": ["issue 1", "issue 2", ...],
+  "optimization_suggestions": ["suggestion 1", "suggestion 2", ...],
+  "cost_efficiency_insights": ["insight 1", "insight 2", ...],
+  "improved_workflow": ["step 1", "step 2", ...],
+  "complexity_analysis": "Brief complexity assessment",
+  "advanced_suggestions": ["advanced tip 1", "advanced tip 2", ...]
+}
+
+Be technical, specific, and practical. Avoid generic advice."""
+
+class CompareRequest(BaseModel):
+    workflow_description: str
+
+async def run_single_model(api_key: str, model_key: str, workflow: str):
+    config = AI_MODELS[model_key]
+    try:
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"compare-{model_key}-{uuid.uuid4()}",
+            system_message=ANALYSIS_SYSTEM_MESSAGE
+        ).with_model(config["provider"], config["model"])
+
+        user_message = UserMessage(
+            text=f"""Analyze this workflow and provide comprehensive insights:
+
+WORKFLOW:
+{workflow}
+
+Provide your analysis in the exact JSON format specified. Focus on:
+1. Issues/Risks: Identify logical errors, missing steps, failure points, edge cases
+2. Optimization Suggestions: How to reduce steps, improve speed, increase efficiency
+3. Cost & Efficiency Insights: Unnecessary API calls, delays, better alternatives
+4. Improved Workflow: Rewrite in cleaner, optimized step-by-step format
+5. Complexity Analysis: Brief assessment of workflow complexity
+6. Advanced Suggestions: Advanced engineering practices, monitoring, scaling
+
+Return ONLY valid JSON, no additional text."""
+        )
+
+        response_text = await chat.send_message(user_message)
+        response_clean = response_text.strip()
+        if response_clean.startswith("```json"):
+            response_clean = response_clean[7:]
+        if response_clean.startswith("```"):
+            response_clean = response_clean[3:]
+        if response_clean.endswith("```"):
+            response_clean = response_clean[:-3]
+        response_clean = response_clean.strip()
+        data = json.loads(response_clean)
+        return {"model": model_key, "label": config["label"], "status": "success", "data": data}
+    except Exception as e:
+        logger.error(f"Compare model {model_key} error: {str(e)}")
+        return {"model": model_key, "label": config["label"], "status": "error", "error": str(e)}
+
+@api_router.post("/compare-models")
+async def compare_models(request: CompareRequest, user: dict = Depends(get_current_user)):
+    api_key = os.environ.get('EMERGENT_LLM_KEY')
+    if not api_key:
+        raise HTTPException(status_code=500, detail="API key not configured")
+
+    tasks = [run_single_model(api_key, key, request.workflow_description) for key in AI_MODELS]
+    results = await asyncio.gather(*tasks)
+
+    # Save comparison to history
+    created_at = datetime.now(timezone.utc).isoformat()
+    share_token = secrets.token_urlsafe(16)
+    comparison_doc = {
+        "user_id": user["_id"],
+        "workflow_description": request.workflow_description,
+        "type": "comparison",
+        "model_used": "All Models (Comparison)",
+        "results": {r["model"]: r for r in results},
+        "share_token": share_token,
+        "is_public": False,
+        "created_at": created_at
+    }
+    await db.workflow_history.insert_one(comparison_doc)
+
+    return {"results": results, "workflow_description": request.workflow_description, "created_at": created_at}
+
 # ─── Workflow History ───
 
 @api_router.get("/workflow-history")
