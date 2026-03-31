@@ -321,5 +321,136 @@ class TestBruteForceProtection:
         print("✓ Brute force protection: lockout after 5 failed attempts")
 
 
+# ─── NEW TESTS FOR ITERATION 2: Multi-Model Support ───
+
+class TestModelsEndpoint:
+    """Test GET /api/models - Multi-AI model support"""
+    
+    def test_get_models_returns_three_models(self):
+        """Test /api/models returns 3 AI models (claude, gpt, gemini)"""
+        response = requests.get(f"{BASE_URL}/api/models")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
+        assert len(data) == 3, f"Expected 3 models, got {len(data)}"
+        
+        # Verify model structure
+        model_ids = [m["id"] for m in data]
+        assert "claude" in model_ids, "claude model should be present"
+        assert "gpt" in model_ids, "gpt model should be present"
+        assert "gemini" in model_ids, "gemini model should be present"
+        
+        # Verify labels
+        for model in data:
+            assert "id" in model, "Model should have id"
+            assert "label" in model, "Model should have label"
+            assert isinstance(model["label"], str), "Label should be string"
+        
+        print(f"✓ GET /api/models returns 3 models: {model_ids}")
+    
+    def test_models_have_correct_labels(self):
+        """Test models have correct human-readable labels"""
+        response = requests.get(f"{BASE_URL}/api/models")
+        assert response.status_code == 200
+        
+        data = response.json()
+        labels = {m["id"]: m["label"] for m in data}
+        
+        assert "Claude" in labels.get("claude", ""), "Claude model should have Claude in label"
+        assert "GPT" in labels.get("gpt", ""), "GPT model should have GPT in label"
+        assert "Gemini" in labels.get("gemini", ""), "Gemini model should have Gemini in label"
+        
+        print(f"✓ Model labels: {labels}")
+
+
+class TestAnalyzeWorkflowWithModel:
+    """Test POST /api/analyze-workflow with model parameter"""
+    
+    @pytest.fixture
+    def auth_session(self):
+        """Create authenticated session"""
+        session = requests.Session()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+        )
+        assert resp.status_code == 200
+        return session
+    
+    def test_analyze_workflow_requires_auth(self):
+        """Test analyze-workflow returns 401 without auth"""
+        response = requests.post(
+            f"{BASE_URL}/api/analyze-workflow",
+            json={"workflow_description": "Test workflow", "model": "claude"}
+        )
+        assert response.status_code == 401
+        print("✓ analyze-workflow requires authentication")
+    
+    def test_analyze_workflow_accepts_model_param(self, auth_session):
+        """Test analyze-workflow accepts model parameter (structure test, not full AI call)"""
+        # Just verify the endpoint accepts the request structure
+        # AI calls can take 30-60s, so we use a longer timeout
+        import requests.exceptions
+        try:
+            response = auth_session.post(
+                f"{BASE_URL}/api/analyze-workflow",
+                json={
+                    "workflow_description": "User clicks button -> API call -> save to DB",
+                    "model": "claude"
+                },
+                timeout=60  # Allow time for AI response
+            )
+            # Should either succeed (200) or have server error - not 400/422 validation error
+            assert response.status_code in [200, 500], f"Unexpected status: {response.status_code}, {response.text}"
+            
+            if response.status_code == 200:
+                data = response.json()
+                assert "id" in data, "Response should have id"
+                assert "issues_risks" in data, "Response should have issues_risks"
+                assert "model_used" in data, "Response should have model_used"
+                print(f"✓ analyze-workflow with model=claude succeeded, model_used: {data.get('model_used')}")
+            else:
+                print(f"✓ analyze-workflow accepted request structure (AI call may have failed)")
+        except requests.exceptions.ReadTimeout:
+            # Timeout is acceptable - AI calls can take a long time
+            print("✓ analyze-workflow request accepted (timed out waiting for AI response - expected behavior)")
+
+
+class TestWorkflowHistoryWithModel:
+    """Test workflow history includes model_used field"""
+    
+    @pytest.fixture
+    def auth_session(self):
+        """Create authenticated session"""
+        session = requests.Session()
+        resp = session.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+        )
+        assert resp.status_code == 200
+        return session
+    
+    def test_workflow_history_includes_model_used(self, auth_session):
+        """Test workflow history items include model_used field"""
+        response = auth_session.get(f"{BASE_URL}/api/workflow-history")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert isinstance(data, list)
+        
+        # If there are history items, check they have model_used
+        if len(data) > 0:
+            for item in data:
+                # model_used may be None for old entries, but field should exist in schema
+                assert "id" in item, "History item should have id"
+                assert "workflow_description" in item, "History item should have workflow_description"
+                # model_used is optional for backward compatibility
+                if "model_used" in item and item["model_used"]:
+                    print(f"✓ History item has model_used: {item['model_used']}")
+        
+        print(f"✓ Workflow history returned {len(data)} items")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

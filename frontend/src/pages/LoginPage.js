@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
-import { Loader2, LogIn, Mail, Lock } from "lucide-react";
+import { Loader2, LogIn, Mail, Lock, Activity } from "lucide-react";
 
 function formatApiError(detail) {
   if (detail == null) return "Something went wrong. Please try again.";
@@ -34,79 +34,106 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4" data-testid="login-page">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-            WorkflowAI
-          </h1>
-          <p className="text-slate-400 mt-1 text-sm">AI Debugger & Optimizer</p>
+    <div className="min-h-screen bg-[#0F172A] auth-bg flex" data-testid="login-page">
+      {/* Left panel - branding */}
+      <div className="hidden lg:flex lg:w-1/2 items-center justify-center p-12">
+        <div className="max-w-md">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-10 h-10 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-center justify-center">
+              <Activity className="w-5 h-5 text-blue-400" />
+            </div>
+            <span className="text-2xl font-bold tracking-tight text-[#F8FAFC]">WorkflowAI</span>
+          </div>
+          <h2 className="text-4xl font-bold tracking-tight text-[#F8FAFC] leading-tight mb-4">
+            Debug and optimize<br />your workflows with AI
+          </h2>
+          <p className="text-[#94A3B8] text-base leading-relaxed">
+            Paste any workflow description and get instant, actionable insights on issues, optimizations, cost savings, and engineering best practices.
+          </p>
+          <div className="mt-10 grid grid-cols-2 gap-4">
+            {[
+              { label: "Issues & Risks", color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
+              { label: "Optimizations", color: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
+              { label: "Cost Insights", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+              { label: "Complexity", color: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
+            ].map(f => (
+              <div key={f.label} className={`px-3 py-2 rounded-md border text-xs font-medium ${f.color}`}>
+                {f.label}
+              </div>
+            ))}
+          </div>
         </div>
+      </div>
 
-        <div className="bg-[#1E293B] rounded-2xl p-8 border border-slate-700/50 shadow-2xl shadow-black/20">
-          <h2 className="text-xl font-semibold text-slate-100 mb-6">Sign In</h2>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm" data-testid="login-error">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm text-slate-400 mb-1.5">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  data-testid="login-email-input"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-slate-600 rounded-xl pl-10 pr-4 py-3 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  placeholder="you@example.com"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-400 mb-1.5">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  data-testid="login-password-input"
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-slate-600 rounded-xl pl-10 pr-4 py-3 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  placeholder="Enter your password"
-                  required
-                />
-              </div>
-            </div>
-
-            <button
-              data-testid="login-submit-button"
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed text-white font-semibold rounded-xl shadow-lg shadow-blue-500/20 transition-all duration-200 flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-              {loading ? "Signing in..." : "Sign In"}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <Link to="/forgot-password" className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
-              Forgot password?
-            </Link>
+      {/* Right panel - form */}
+      <div className="flex-1 flex items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm">
+          <div className="lg:hidden flex items-center gap-2 mb-8 justify-center">
+            <Activity className="w-5 h-5 text-blue-400" />
+            <span className="text-xl font-bold tracking-tight text-[#F8FAFC]">WorkflowAI</span>
           </div>
 
-          <div className="mt-4 text-center text-sm text-slate-400">
-            Don't have an account?{" "}
-            <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors" data-testid="go-to-register">
-              Sign Up
-            </Link>
+          <div className="bg-[#1E293B] rounded-lg p-6 border border-[#334155]">
+            <h2 className="text-lg font-semibold text-[#F8FAFC] mb-5 tracking-tight">Sign in to your account</h2>
+
+            {error && (
+              <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 rounded-md text-rose-400 text-sm" data-testid="login-error">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-[#94A3B8] mb-1.5 uppercase tracking-wide">Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+                  <input
+                    data-testid="login-email-input"
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="w-full bg-[#020617] border border-[#334155] rounded-md pl-10 pr-4 py-2.5 text-[#F8FAFC] placeholder-[#64748B] focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm"
+                    placeholder="you@example.com"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#94A3B8] mb-1.5 uppercase tracking-wide">Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+                  <input
+                    data-testid="login-password-input"
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full bg-[#020617] border border-[#334155] rounded-md pl-10 pr-4 py-2.5 text-[#F8FAFC] placeholder-[#64748B] focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm"
+                    placeholder="Enter password"
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                data-testid="login-submit-button"
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors duration-200 flex items-center justify-center gap-2 text-sm"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                {loading ? "Signing in..." : "Sign In"}
+              </button>
+            </form>
+
+            <div className="mt-5 flex items-center justify-between text-xs">
+              <Link to="/forgot-password" className="text-[#94A3B8] hover:text-[#F8FAFC] transition-colors">
+                Forgot password?
+              </Link>
+              <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors" data-testid="go-to-register">
+                Create account
+              </Link>
+            </div>
           </div>
         </div>
       </div>

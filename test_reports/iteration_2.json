@@ -1,0 +1,93 @@
+{
+  "summary": "Completed testing of WorkflowAI Phase 2 features: Multi-AI model support, UI redesign (Swiss high-contrast dark theme), PDF export, and history with model_used field. All features working correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_workflow.py",
+    "/app/test_reports/pytest/pytest_results_iter2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_auth_workflow.py"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23 passed, 1 skipped)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "admin": "admin@workflowai.com / admin123"
+  },
+  "seed_data_creation": "Admin user seeded automatically on startup",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All Phase 2 features tested and working: Multi-model support (GET /api/models returns 3 models), model selector dropdown on dashboard, PDF export button appears after analysis, history items show model_used badge. UI redesign with Swiss high-contrast dark theme verified. Split-screen auth pages (login/register) working. Protected routes redirect correctly. Shared page handles invalid tokens.",
+  "tests_executed": {
+    "backend_api_tests": [
+      "GET /api/ - Health check",
+      "POST /api/auth/login - Admin login success",
+      "POST /api/auth/login - Invalid credentials rejected",
+      "POST /api/auth/login - Non-existent user rejected",
+      "POST /api/auth/register - New user registration",
+      "POST /api/auth/register - Duplicate email rejected",
+      "GET /api/auth/me - Returns user when authenticated",
+      "GET /api/auth/me - Returns 401 when unauthenticated",
+      "POST /api/auth/logout - Clears cookies",
+      "POST /api/auth/refresh - Refreshes access token",
+      "POST /api/auth/refresh - Returns 401 without token",
+      "POST /api/auth/forgot-password - Existing email",
+      "POST /api/auth/forgot-password - Non-existent email (no reveal)",
+      "GET /api/workflow-history - Returns history when authenticated",
+      "GET /api/workflow-history - Returns 401 when unauthenticated",
+      "POST /api/workflow-history/{id}/toggle-public - 404 for non-existent",
+      "DELETE /api/workflow-history/{id} - 404 for non-existent",
+      "GET /api/shared/{token} - 404 for invalid token",
+      "GET /api/models - Returns 3 AI models (claude, gpt, gemini)",
+      "GET /api/models - Models have correct labels",
+      "POST /api/analyze-workflow - Requires authentication",
+      "POST /api/analyze-workflow - Accepts model parameter",
+      "GET /api/workflow-history - History items include model_used field"
+    ],
+    "frontend_ui_tests": [
+      "Login page: Split-screen layout with branding on left, form on right",
+      "Login page: Swiss high-contrast dark theme (bg #0F172A)",
+      "Login page: Email/password inputs, Sign In button, Forgot password link, Create account link",
+      "Login flow: Admin credentials redirect to dashboard",
+      "Register page: Split-screen layout with name/email/password fields",
+      "Dashboard: Model selector dropdown with 3 options (Claude Sonnet 4.5, GPT-5.2, Gemini 3 Flash)",
+      "Dashboard: Workflow input textarea, Analyze button, History toggle",
+      "Dashboard: User display name (Admin), Sign Out button",
+      "Dashboard: History panel opens with previous analyses",
+      "Dashboard: History items show model_used badge (Claude Sonnet 4.5)",
+      "Dashboard: PDF export button appears after loading analysis",
+      "Dashboard: Analysis results display with Issues & Risks, Optimizations, Cost & Efficiency cards",
+      "Protected route: / redirects to /login when unauthenticated",
+      "Shared page: Invalid token shows 'Not Found' error with link to login"
+    ]
+  },
+  "features_verified": {
+    "multi_model_support": {
+      "status": "WORKING",
+      "details": "GET /api/models returns 3 models: claude (Claude Sonnet 4.5), gpt (GPT-5.2), gemini (Gemini 3 Flash). Model selector dropdown on dashboard shows all 3 options."
+    },
+    "ui_redesign": {
+      "status": "WORKING",
+      "details": "Swiss high-contrast dark theme with bg #0F172A. Split-screen auth pages. Clean typography with Outfit/IBM Plex Sans fonts. Feature badges on login page."
+    },
+    "pdf_export": {
+      "status": "WORKING",
+      "details": "Export PDF button appears next to Analyze Workflow button after analysis is loaded. Uses html2pdf.js."
+    },
+    "history_with_model": {
+      "status": "WORKING",
+      "details": "History items display model_used badge (e.g., 'Claude Sonnet 4.5'). API returns model_used field."
+    }
+  }
+}

@@ -117,8 +117,15 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+AI_MODELS = {
+    "claude": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929", "label": "Claude Sonnet 4.5"},
+    "gpt": {"provider": "openai", "model": "gpt-5.2", "label": "GPT-5.2"},
+    "gemini": {"provider": "gemini", "model": "gemini-3-flash-preview", "label": "Gemini 3 Flash"},
+}
+
 class WorkflowAnalysisRequest(BaseModel):
     workflow_description: str
+    model: str = "claude"
 
 class WorkflowAnalysisResponse(BaseModel):
     id: Optional[str] = None
@@ -246,12 +253,18 @@ async def root():
 
 # ─── Workflow Analysis ───
 
+@api_router.get("/models")
+async def get_available_models():
+    return [{"id": k, "label": v["label"]} for k, v in AI_MODELS.items()]
+
 @api_router.post("/analyze-workflow")
 async def analyze_workflow(request: WorkflowAnalysisRequest, user: dict = Depends(get_current_user)):
     try:
         api_key = os.environ.get('EMERGENT_LLM_KEY')
         if not api_key:
             raise HTTPException(status_code=500, detail="API key not configured")
+
+        model_config = AI_MODELS.get(request.model, AI_MODELS["claude"])
 
         chat = LlmChat(
             api_key=api_key,
@@ -270,7 +283,7 @@ You MUST respond in the following JSON format:
 }
 
 Be technical, specific, and practical. Avoid generic advice."""
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        ).with_model(model_config["provider"], model_config["model"])
 
         user_message = UserMessage(
             text=f"""Analyze this workflow and provide comprehensive insights:
@@ -307,6 +320,7 @@ Return ONLY valid JSON, no additional text."""
         history_doc = {
             "user_id": user["_id"],
             "workflow_description": request.workflow_description,
+            "model_used": model_config["label"],
             "issues_risks": analysis_data.get("issues_risks", []),
             "optimization_suggestions": analysis_data.get("optimization_suggestions", []),
             "cost_efficiency_insights": analysis_data.get("cost_efficiency_insights", []),
@@ -328,6 +342,7 @@ Return ONLY valid JSON, no additional text."""
             "complexity_analysis": analysis_data.get("complexity_analysis", ""),
             "advanced_suggestions": analysis_data.get("advanced_suggestions", []),
             "workflow_description": request.workflow_description,
+            "model_used": model_config["label"],
             "created_at": history_doc["created_at"],
             "share_token": share_token
         }
@@ -347,7 +362,7 @@ Return ONLY valid JSON, no additional text."""
 async def get_workflow_history(user: dict = Depends(get_current_user)):
     histories = await db.workflow_history.find(
         {"user_id": user["_id"]},
-        {"_id": 1, "workflow_description": 1, "complexity_analysis": 1, "created_at": 1, "share_token": 1, "is_public": 1}
+        {"_id": 1, "workflow_description": 1, "complexity_analysis": 1, "created_at": 1, "share_token": 1, "is_public": 1, "model_used": 1}
     ).sort("created_at", -1).to_list(100)
     for h in histories:
         h["id"] = str(h.pop("_id"))

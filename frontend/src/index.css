@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500&family=JetBrains+Mono:wght@400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,46 +9,72 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-[#0F172A] text-[#F8FAFC];
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', system-ui, sans-serif;
+  }
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
   }
 }
 
-/* Custom animations */
+/* Staggered entrance */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slideUp {
+  animation: slideUp 0.4s ease-out forwards;
+  opacity: 0;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.3s; }
+
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.6s ease-out forwards;
+  animation: fadeIn 0.5s ease-out forwards;
 }
 
-/* Custom scrollbar for dark theme */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* Glow pulse for loading */
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.15); }
+  50% { box-shadow: 0 0 40px rgba(59, 130, 246, 0.3); }
 }
 
-::-webkit-scrollbar-track {
-  background: #0F172A;
+.glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
 }
 
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 5px;
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0F172A; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Card hover effect */
+.card-hover {
+  transition: border-color 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+.card-hover:hover {
+  border-color: #475569;
+  transform: translateY(-1px);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #475569;
-}
-
-/* Smooth transitions */
-* {
-  @apply transition-colors duration-200;
+/* Auth background pattern */
+.auth-bg {
+  background-image: 
+    radial-gradient(ellipse at 20% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
 }
