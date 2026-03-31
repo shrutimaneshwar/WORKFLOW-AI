@@ -1,0 +1,107 @@
+{
+  "theme_and_archetype": {
+    "domain": "Enterprise SaaS, Developer Tools, AI Tool",
+    "theme": "Dark",
+    "archetype": "4 (Swiss & High-Contrast)",
+    "description": "High contrast, technical, authority-driven aesthetic suited for an AI Debugger & Optimizer. Deep slate backgrounds with crisp borders and highly functional color coding for data analysis."
+  },
+  "color_palette": {
+    "background": {
+      "main": "#0F172A",
+      "card": "#1E293B",
+      "input": "#020617",
+      "hover": "#334155"
+    },
+    "text": {
+      "primary": "#F8FAFC",
+      "secondary": "#94A3B8",
+      "muted": "#64748B"
+    },
+    "border": {
+      "default": "#334155",
+      "focus": "#3B82F6"
+    },
+    "brand": {
+      "primary": "#3B82F6",
+      "primary_hover": "#2563EB"
+    },
+    "accents": {
+      "error": "#F43F5E",
+      "warning": "#F59E0B",
+      "success": "#10B981",
+      "info": "#0EA5E9"
+    }
+  },
+  "typography": {
+    "headings": {
+      "family": "Outfit",
+      "weights": ["400", "600", "700"],
+      "tracking": "tracking-tight"
+    },
+    "body": {
+      "family": "IBM Plex Sans",
+      "weights": ["400", "500"]
+    },
+    "code": {
+      "family": "JetBrains Mono",
+      "weights": ["400"]
+    }
+  },
+  "spacing_and_layout": {
+    "container_padding": "p-6 md:p-8",
+    "grid_strategy": "The Control Room Grid",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6",
+    "border_radius": "rounded-lg"
+  },
+  "components": {
+    "cards": {
+      "style": "Flat background (#1E293B), 1px solid border (#334155), no shadow. On hover: slight border brightness increase.",
+      "usage": "Used for the 6 analysis output sections."
+    },
+    "buttons": {
+      "primary": "bg-blue-500 text-white hover:bg-blue-600 rounded-md transition-colors",
+      "secondary": "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 transition-colors"
+    },
+    "inputs": {
+      "style": "bg-slate-950 border border-slate-700 text-slate-100 rounded-md focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+    },
+    "badges": {
+      "style": "px-2.5 py-0.5 rounded-full text-xs font-medium border"
+    }
+  },
+  "motion_and_interactions": {
+    "hover_states": "Buttons and links should visibly lighten on hover. Cards should have a subtle border color shift.",
+    "transitions": "Use 'transition-all duration-200 ease-in-out' for color and border changes.",
+    "entrances": "Staggered fade-in (opacity 0 to 1, translate-y 4px to 0) for the 6 analysis output cards."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "background",
+        "url": "https://images.unsplash.com/photo-1772050138768-2107c6e62a03?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODh8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhcmslMjB0ZWNobm9sb2d5JTIwbmV0d29yayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzc0OTI1NjUxfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract green light trails on black background - use for login/register page background with an overlay (e.g., bg-slate-900/80 backdrop-blur-sm)."
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "instructions": "Use Lucide React icons for all UI elements. For the app logo, use the 'Cpu' or 'Activity' icon from lucide-react with the primary brand color."
+    }
+  },
+  "page_specific_guidelines": {
+    "auth_pages": "Split screen layout or centered card layout. If split screen, use the abstract technology background on one side with a heavy dark overlay.",
+    "dashboard": "Header with Logo, Navigation (Dashboard, History), and User Profile. Main area: Workflow Input section at the top, followed by a 'Control Room' grid for the 6 analysis cards. Use distinct accent colors for icons/badges on each of the 6 cards to differentiate them visually.",
+    "history_panel": "Dense list or table view showing previous analyses. Actions (share, delete, toggle public) should be icon buttons.",
+    "shared_analysis": "Clean, read-only view. Remove the input section and show the 6 analysis cards directly. Include a 'Powered by WorkflowAI' subtle watermark/footer."
+  },
+  "accessibility": {
+    "contrast": "Ensure text contrast meets WCAG AA standards. Use text-slate-50 for primary text against slate-900/slate-800.",
+    "focus": "All interactive elements must have clear focus rings.",
+    "test_ids": "All interactive elements (buttons, inputs, links) must have data-testid attributes."
+  },
+  "instructions_to_main_agent": [
+    "Use standard Tailwind CSS classes.",
+    "Do NOT use raw HTML `<select>` or `<input type='date'>`, use Shadcn UI primitives when building forms or dropdowns.",
+    "Apply `Outfit` for headings and `IBM Plex Sans` for body text. Update index.css with Google Fonts imports.",
+    "Ensure all 6 analysis sections are visually distinct but follow the 'Control Room' dense grid design."
+  ]
+}

@@ -163,7 +163,7 @@ async def register(request: RegisterRequest, response: Response):
 @api_router.post("/auth/login")
 async def login(request: LoginRequest, response: Response, req: Request):
     email = request.email.lower().strip()
-    ip = req.client.host if req.client else "unknown"
+    ip = req.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (req.client.host if req.client else "unknown")
     await check_brute_force(ip, email)
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(request.password, user["password_hash"]):
